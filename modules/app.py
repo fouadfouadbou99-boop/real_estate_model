@@ -235,7 +235,7 @@ van = npv(
 )
 
 moic = (
-    (equity_flows[1:]) / equity
+    (equity_flows[1:]) 
 )
 
 cap_rate = (
