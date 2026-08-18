@@ -1,394 +1,380 @@
 import streamlit as st
 import pandas as pd
-
-from modules.finance import (
-    calculate_investment,
-    amortizing_debt_schedule
-)
-
-from modules.cashflows import (
-    build_cashflows
-)
-
-from modules.kpi import (
-    calculate_kpis
-)
-
-from modules.charts import (
-    noi_chart,
-    equity_cf_chart,
-    debt_equity_chart
-)
-
-from modules.exports import (
-    export_excel
-)
-
-from modules.recommendation import (
-    get_recommendation
-)
-
-# ---------------------------------------------------
-# CONFIG
-# ---------------------------------------------------
+import numpy as np
+import plotly.express as px
+from numpy_financial import irr, npv, pmt
 
 st.set_page_config(
-    page_title="Real Estate Analyzer",
-    page_icon="🏢",
+    page_title="Real Estate Investment Analyzer",
     layout="wide"
 )
 
 st.title("🏢 Real Estate Investment Analyzer")
 
-# ---------------------------------------------------
+# ========================
 # SIDEBAR
-# ---------------------------------------------------
+# ========================
 
 st.sidebar.header("Hypothèses")
 
-price = st.sidebar.number_input(
-    "Prix Acquisition",
-    value=1000000.0,
-    step=10000.0
+purchase_price = st.sidebar.number_input(
+    "Prix acquisition",
+    value=1000000.0
 )
 
-fees_pct = st.sidebar.number_input(
-    "Frais Acquisition %",
+acquisition_fee_pct = st.sidebar.number_input(
+    "Frais acquisition %",
     value=0.08
 )
 
 works = st.sidebar.number_input(
     "Travaux",
-    value=100000.0,
-    step=10000.0
+    value=100000.0
 )
 
-rent = st.sidebar.number_input(
-    "Loyer Brut Année 1",
-    value=120000.0,
-    step=5000.0
+rent_year1 = st.sidebar.number_input(
+    "Loyer brut année 1",
+    value=120000.0
 )
 
-growth = st.sidebar.slider(
-    "Croissance Loyers %",
-    0.0,
-    10.0,
-    2.0
-) / 100
+rent_growth = st.sidebar.number_input(
+    "Croissance loyers %",
+    value=0.02
+)
 
-vacancy = st.sidebar.slider(
+vacancy = st.sidebar.number_input(
     "Vacance %",
-    0.0,
-    20.0,
-    5.0
-) / 100
+    value=0.05
+)
 
-charges = st.sidebar.slider(
+charges = st.sidebar.number_input(
     "Charges %",
-    0.0,
-    50.0,
-    20.0
-) / 100
+    value=0.20
+)
 
-ltv = st.sidebar.slider(
-    "LTV %",
-    0.0,
-    80.0,
-    60.0
-) / 100
+ltv = st.sidebar.number_input(
+    "LTV cible",
+    value=0.60
+)
 
-debt_rate = st.sidebar.slider(
-    "Taux Dette %",
-    0.0,
-    15.0,
-    5.0
-) / 100
+debt_rate = st.sidebar.number_input(
+    "Taux dette",
+    value=0.05
+)
 
-debt_years = st.sidebar.number_input(
-    "Durée Dette",
+debt_term = st.sidebar.number_input(
+    "Durée dette",
     value=20
 )
 
-horizon = st.sidebar.number_input(
+holding_period = st.sidebar.number_input(
     "Horizon",
     value=20
 )
 
-discount_rate = st.sidebar.slider(
-    "Taux Actualisation %",
-    0.0,
-    15.0,
-    8.0
-) / 100
-
-# ---------------------------------------------------
-# INVESTISSEMENT
-# ---------------------------------------------------
-
-investment, debt, equity = calculate_investment(
-    price,
-    fees_pct,
-    works,
-    ltv
+exit_cap_rate = st.sidebar.number_input(
+    "Exit Cap Rate",
+    value=0.07
 )
 
-investment_df = pd.DataFrame({
-    "Variable": [
-        "Investissement",
-        "Dette",
-        "Equity"
-    ],
-    "Valeur": [
-        investment,
-        debt,
-        equity
-    ]
-})
-
-# ---------------------------------------------------
-# DETTE
-# ---------------------------------------------------
-
-debt_df = amortizing_debt_schedule(
-    debt,
-    debt_rate,
-    debt_years
+selling_cost = st.sidebar.number_input(
+    "Frais cession",
+    value=0.03
 )
 
-debt_service = debt_df.iloc[0]["Annuité"]
-interest_year1["Annuité" = debt_df.iloc[0]"]
-
-# ---------------------------------------------------
-# CASH FLOWS
-# ---------------------------------------------------
-
-cf_df = build_cashflows(
-    rent,
-    growth,
-    vacancy,
-    charges,
-    horizon,
-    debt_service
+discount_rate = st.sidebar.number_input(
+    "Taux actualisation",
+    value=0.08
 )
 
-noi_year1["Intérêts = cf_df.iloc[0] ---------------------------------------------------
-# TERMINAL VALUE
-# ---------------------------------------------------
+# ========================
+# INVESTMENT
+# ========================
 
-exit_cap = 0.07
-
-terminal_value = (
-    cf_df.iloc[-1]["NOI"] * (1 + growth)
-) / exit_cap
-
-# ---------------------------------------------------
-# FLUX KPI
-# ---------------------------------------------------
-
-project_cf = [-investment]
-
-for _, row in cf_df.iterrows():
-    project_cf.append(row["NOI"])
-
-project_cf[-1] += terminal_value
-
-equity_cf = [-equity]
-
-for _, row in cf_df.iterrows():
-    equity_cf.append(row["CF Equity"])
-
-equity_cf[-1] += terminal_value
-
-# ---------------------------------------------------
-# KPI
-# ---------------------------------------------------
-
-kpis = calculate_kpis(
-    investment,
-    equity,
-    debt,
-    noi_year1,
-    debt_service,
-    interest_year1,
-    discount_rate,
-    project_cf,
-    equity_cf
+investment_total = (
+    purchase_price
+    + purchase_price * acquisition_fee_pct
+    + works
 )
 
-# ---------------------------------------------------
-# DASHBOARD
-# ---------------------------------------------------
+debt = investment_total * ltv
+equity = investment_total - debt
 
-st.subheader("📊 Dashboard")
+# ========================
+# DEBT SCHEDULE
+# ========================
 
-col1, col2, col3, col4, col5 = st.columns(5)
-
-col1.metric(
-    "TRI Equity",
-    f"{kpis['TRI Equity']:.2%}"
+annuity = abs(
+    pmt(
+        debt_rate,
+        debt_term,
+        debt
+    )
 )
 
-col2.metric(
-    "TRI Projet",
-    f"{kpis['TRI Projet']:.2%}"
-)
+schedule = []
 
-col3.metric(
-    "DSCR",
-    f"{kpis['DSCR']:.2f}x"
-)
+balance = debt
 
-col4.metric(
-    "MOIC",
-    f"{kpis['MOIC']:.2f}x"
-)
+for year in range(1, debt_term + 1):
 
-col5.metric(
-    "VAN",
-    f"{kpis['VAN']:,.0f}"
-)
+    interest = balance * debt_rate
 
-# ---------------------------------------------------
-# RECOMMANDATION
-# ---------------------------------------------------
+    principal = annuity - interest
 
-decision = get_recommendation(
-    kpis["TRI Equity"],
-    kpis["DSCR"],
-    ltv,
-    kpis["VAN"]
-)
-
-st.subheader("✅ Recommandation")
-
-st.success(decision)
-
-# ---------------------------------------------------
-# GRAPHIQUES
-# ---------------------------------------------------
-
-st.subheader("📈 Analyse Graphique")
-
-fig1 = noi_chart(cf_df)
-st.plotly_chart(
-    fig1,
-    use_container_width=True
-)
-
-fig2 = equity_cf_chart(cf_df)
-st.plotly_chart(
-    fig2,
-    use_container_width=True
-)
-
-fig3 = debt_equity_chart(
-    debt,
-    equity
-)
-
-st.plotly_chart(
-    fig3,
-    use_container_width=True
-)
-
-# ---------------------------------------------------
-# TABLEAUX
-# ---------------------------------------------------
-
-tab1, tab2, tab3 = st.tabs(
-    [
-        "Investissement",
-        "Dette",
-        "Cash-Flows"
-    ]
-)
-
-with tab1:
-    st.dataframe(
-        investment_df,
-        use_container_width=True
+    ending_balance = max(
+        balance - principal,
+        0
     )
 
-with tab2:
-    st.dataframe(
-        debt_df,
-        use_container_width=True
-    )
-
-with tab3:
-    st.dataframe(
-        cf_df,
-        use_container_width=True
-    )
-
-# ---------------------------------------------------
-# KPI TABLE
-# ---------------------------------------------------
-
-kpi_df = pd.DataFrame(
-    {
-        "KPI": list(kpis.keys()),
-        "Valeur": list(kpis.values())
-    }
-)
-
-# ---------------------------------------------------
-# EXPORT EXCEL
-# ---------------------------------------------------
-
-excel_file = export_excel(
-    investment_df,
-    debt_df,
-    cf_df,
-    kpi_df
-)
-
-st.download_button(
-    label="📊 Télécharger Excel",
-    data=excel_file,
-    file_name="Investment_Analysis.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-# ---------------------------------------------------
-# STRESS TEST SIMPLE
-# ---------------------------------------------------
-
-st.subheader("⚠ Stress Test")
-
-stress_rent = rent * 0.9
-
-stress_cf = build_cashflows(
-    stress_rent,
-    growth,
-    vacancy,
-    charges,
-    horizon,
-    debt_service
-)
-
-stress_noi = stress_cf.iloc[0]["NOI"]
-
-stress_dscr = stress_noi / debt_service
-
-stress_df = pd.DataFrame(
-    {
-        "Scénario": [
-            "Base",
-            "-10% Loyers"
-        ],
-        "DSCR": [
-            kpis["DSCR"],
-            stress_dscr
+    schedule.append(
+        [
+            year,
+            balance,
+            annuity,
+            interest,
+            principal,
+            ending_balance
         ]
-    }
+    )
+
+    balance = ending_balance
+
+debt_df = pd.DataFrame(
+    schedule,
+    columns=[
+        "Année",
+        "Solde début",
+        "Annuité",
+        "Intérêts",
+        "Principal",
+        "Solde fin"
+    ]
 )
+
+# ========================
+# CASH FLOWS
+# ========================
+
+cashflows = []
+
+for year in range(1, holding_period + 1):
+
+    rent = rent_year1 * ((1 + rent_growth) ** (year - 1))
+
+    rent_net = rent * (1 - vacancy)
+
+    noi = rent_net * (1 - charges)
+
+    debt_service = annuity
+
+    cf_equity = noi - debt_service
+
+    terminal_value = 0
+
+    if year == holding_period:
+
+        noi_next = noi * (1 + rent_growth)
+
+        terminal_value = (
+            noi_next / exit_cap_rate
+        ) * (1 - selling_cost)
+
+    cashflows.append(
+        [
+            year,
+            rent,
+            rent_net,
+            noi,
+            debt_service,
+            cf_equity,
+            terminal_value
+        ]
+    )
+
+cf_df = pd.DataFrame(
+    cashflows,
+    columns=[
+        "Année",
+        "Loyer",
+        "Loyer Net",
+        "NOI",
+        "Service Dette",
+        "CF Equity",
+        "Valeur Terminale"
+    ]
+)
+
+# ========================
+# KPI
+# ========================
+
+project_flows = [-investment_total]
+
+project_flows.extend(
+    list(cf_df["NOI"])
+)
+
+project_flows[-1] += cf_df.iloc[-1]["Valeur Terminale"]
+
+equity_flows = [-equity]
+
+equity_flows.extend(
+    list(cf_df["CF Equity"])
+)
+
+equity_flows[-1] += cf_df.iloc[-1]["Valeur Terminale"]
+
+tri_projet = irr(project_flows)
+
+tri_equity = irr(equity_flows)
+
+van = npv(
+    discount_rate,
+    equity_flows
+)
+
+moic = (
+    sum(e[-1owsquity_flows    / equity
+)
+
+cap_rate = (
+    cf_df.iloc[0]["NOI"]
+    / purchase_price
+)
+
+dscr = (
+    cf_df.iloc[0]["NOI"]
+    / annuity
+)
+
+ltv_calc = debt / investment_total
+
+debt_yield = (
+    cf_df.iloc[0]["NOI"]
+    / debt
+)
+
+# ========================
+# DASHBOARD
+# ========================
+
+st.header("📊 Dashboard")
+
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric(
+    "TRI Equity",
+    f"{tri_equity:.2%}"
+)
+
+c2.metric(
+    "TRI Projet",
+    f"{tri_projet:.2%}"
+)
+
+c3.metric(
+    "DSCR",
+    f"{dscr:.2f}x"
+)
+
+c4.metric(
+    "MOIC",
+    f"{moic:.2f}x"
+)
+
+c5, c6, c7 = st.columns(3)
+
+c5.metric(
+    "LTV",
+    f"{ltv_calc:.2%}"
+)
+
+c6.metric(
+    "Debt Yield",
+    f"{debt_yield:.2%}"
+)
+
+c7.metric(
+    "VAN",
+    f"{van:,.0f}"
+)
+
+# ========================
+# TABLES
+# ========================
+
+st.subheader("Cash Flows")
 
 st.dataframe(
-    stress_df,
+    cf_df,
     use_container_width=True
 )
 
-st.caption(
-    "Version 1 - Real Estate Analyzer"
+st.subheader("Dette")
+
+st.dataframe(
+    debt_df,
+    use_container_width=True
+)
+
+# ========================
+# CHARTS
+# ========================
+
+st.subheader("NOI")
+
+fig_noi = px.line(
+    cf_df,
+    x="Année",
+    y="NOI",
+    markers=True
+)
+
+st.plotly_chart(
+    fig_noi,
+    use_container_width=True
+)
+
+st.subheader("Cash Flow Equity")
+
+fig_cf = px.bar(
+    cf_df,
+    x="Année",
+    y="CF Equity"
+)
+
+st.plotly_chart(
+    fig_cf,
+    use_container_width=True
+)
+
+# ========================
+# INVESTMENT DECISION
+# ========================
+
+st.subheader("Comité d'investissement")
+
+if tri_equity > 0.15 and dscr > 1.5 and ltv_calc < 0.50:
+    recommendation = "✅ INVESTIR"
+
+elif tri_equity > 0.10 and dscr > 1.20:
+    recommendation = "⚠️ INVESTIR SOUS CONDITIONS"
+
+else:
+    recommendation = "❌ REJETER"
+
+st.success(recommendation)
+
+st.markdown(
+    f"""
+### Synthèse
+
+- TRI Equity : {tri_equity:.2%}
+- TRI Projet : {tri_projet:.2%}
+- DSCR : {dscr:.2f}x
+- LTV : {ltv_calc:.2%}
+- MOIC : {moic:.2f}x
+- VAN : {van:,.0f}
+"""
 )
