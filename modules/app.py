@@ -234,9 +234,8 @@ van = npv(
     equity_flows
 )
 
-moic = float(sum(equity_flows[1:])
-    (equity_flows[1:]) 
-)
+moic = sum(equity_flows[1:]) / equity
+   
 
 cap_rate = (
     cf_df.iloc[0]["NOI"]
