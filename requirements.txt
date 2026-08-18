@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+numpy-financial
+plotly
+openpyxl
+xlsxwriter
+python-pptx
+reportlab
+fpdf2
+Pillow
