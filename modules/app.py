@@ -234,7 +234,7 @@ van = npv(
     equity_flows
 )
 
-moic = (
+moic = float(sum(equity_flows[1:])
     (equity_flows[1:]) 
 )
 
